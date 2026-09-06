@@ -102,6 +102,19 @@ def run_poc(data_dir="data"):
     low_drift_mask = torch.tensor(full_df["timestep"].isin(range(34, 41)).values) & labelled_mask
     high_drift_mask = torch.tensor(full_df["timestep"].isin(range(41, 50)).values) & labelled_mask
 
+        # --- NEW: check feature normalization ---
+    print("\n=== Feature stats (raw, before normalization) ===")
+    print("Min:", x.min().item(), "Max:", x.max().item())
+    print("Mean:", x.mean().item(), "Std:", x.std().item())
+    print("Per-feature std range:", x.std(dim=0).min().item(), "to", x.std(dim=0).max().item())
+
+    # --- NEW: standardize features (fit on train nodes only — avoids leakage) ---
+    from sklearn.preprocessing import StandardScaler
+    scaler = StandardScaler()
+    scaler.fit(x[train_node_mask].numpy())
+    x = torch.tensor(scaler.transform(x.numpy()), dtype=torch.float)
+
+
     # ---------- Standard GCN ----------
     print("\n=== Training Standard GCN ===")
     gcn = StandardGCN(in_channels=x.shape[1])
@@ -111,7 +124,7 @@ def run_poc(data_dir="data"):
         "low_drift": evaluate_predictions(y[low_drift_mask].numpy(), get_probs(gcn, x, edge_index, low_drift_mask)),
         "high_drift": evaluate_predictions(y[high_drift_mask].numpy(), get_probs(gcn, x, edge_index, high_drift_mask)),
     }
-
+    
     # ---------- Neighbour-Aware GCN ----------
     print("\n=== Training Neighbour-Aware GCN ===")
     na_gcn = NeighbourAwareGCN(in_channels=x.shape[1])
@@ -122,6 +135,15 @@ def run_poc(data_dir="data"):
         "high_drift": evaluate_predictions(y[high_drift_mask].numpy(), get_probs(na_gcn, x, edge_index, high_drift_mask)),
     }
 
+        # --- NEW: diagnostic check before trusting H2 ---
+    std_low_f1 = gcn_results["low_drift"]["f1"]
+    na_low_f1 = na_gcn_results["low_drift"]["f1"]
+    gap = std_low_f1 - na_low_f1
+    print("\n=== DIAGNOSTIC CHECK ===")
+    print(f"Standard GCN low-drift F1:        {std_low_f1:.4f}")
+    print(f"Neighbour-Aware GCN low-drift F1: {na_low_f1:.4f}")
+    print(f"Gap: {gap:.4f}  -> {'OK, proceed to trust H2' if gap < 0.15 else 'STILL BROKEN, do not trust H2 yet'}")
+    
     # ---------- Compare ----------
     print("\n=== RESULTS ===")
     all_results = {

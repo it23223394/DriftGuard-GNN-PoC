@@ -3,12 +3,18 @@ Three models for the PoC, exactly matching supervisor-approved scope:
   1. RandomForestBaseline  - no graph, feature-only
   2. StandardGCN           - static, equal trust to all neighbours
   3. NeighbourAwareGCN     - reliability-reweighted message passing
+
+FIXES applied vs. original:
+  1. reliability clamp -> rescale (no edge fully zeroed out)
+  2. added self-loops (each node keeps its own signal, like GCNConv does)
+  3. switched aggr to "mean" so node degree doesn't distort message scale
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, MessagePassing
+from torch_geometric.utils import add_self_loops
 from sklearn.ensemble import RandomForestClassifier
 
 
@@ -41,17 +47,30 @@ class ReliabilityWeightedConv(MessagePassing):
     features. Recalculated fresh each forward pass (not fixed after training),
     which is what makes this "drift-triggered" rather than static like
     CARE-GNN/PC-GNN/GraphConsis/H2-FDetector.
+
+    FIX: uses mean aggregation (not raw add) so node degree doesn't distort
+    message scale, and adds self-loops with reliability=1.0 so each node
+    always retains its own signal, matching GCNConv's behaviour.
     """
     def __init__(self, in_channels, out_channels):
-        super().__init__(aggr="add")
+        super().__init__(aggr="mean")
         self.lin = nn.Linear(in_channels, out_channels)
 
     def forward(self, x, edge_index, raw_features):
-        # raw_features: original (unprojected) node features, used only
-        # for computing reliability, not for the message content itself
+        # Add self-loops so every node keeps some of its own signal,
+        # same as GCNConv does by default.
+        edge_index, _ = add_self_loops(edge_index, num_nodes=x.size(0))
+
         row, col = edge_index
         reliability = F.cosine_similarity(raw_features[row], raw_features[col], dim=-1)
-        reliability = torch.clamp(reliability, min=0.0)  # negative similarity -> zero trust
+
+        # FIX: rescale instead of clamp-to-zero, so no edge is fully discarded.
+        # [-1, 1] -> [0, 1]
+        reliability = (reliability + 1) / 2
+
+        # Self-loop edges (row == col) get full trust (reliability = 1.0),
+        # since add_self_loops appends them at the end with feature similarity 1.0
+        # already (a node is maximally similar to itself), so no extra step needed.
 
         x = self.lin(x)
         return self.propagate(edge_index, x=x, reliability=reliability)
