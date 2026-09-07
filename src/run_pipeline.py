@@ -143,7 +143,7 @@ def run_poc(data_dir="data"):
     print(f"Standard GCN low-drift F1:        {std_low_f1:.4f}")
     print(f"Neighbour-Aware GCN low-drift F1: {na_low_f1:.4f}")
     print(f"Gap: {gap:.4f}  -> {'OK, proceed to trust H2' if gap < 0.15 else 'STILL BROKEN, do not trust H2 yet'}")
-    
+
     # ---------- Compare ----------
     print("\n=== RESULTS ===")
     all_results = {
@@ -152,7 +152,7 @@ def run_poc(data_dir="data"):
         "Neighbour-Aware GCN": na_gcn_results,
     }
     compare_across_drift(all_results)
-    return all_results
+    return all_results, gcn, na_gcn, x, edge_index, y, low_drift_mask, high_drift_mask
 
 
 if __name__ == "__main__":
