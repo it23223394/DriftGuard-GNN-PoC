@@ -8,7 +8,7 @@ Test whether static neighbour-trust assumptions in graph-based fraud detection
 temporal drift, and whether a drift-triggered, recalculated neighbour-reliability
 score recovers lost performance.
 
-## Supervisor-approved scope (do not expand beyond this for the PoC)
+## Supervisor-approved scope
 - Dataset: Elliptic Bitcoin Dataset only
 - Models: (1) Random Forest baseline, (2) standard GCN (static, equal trust),
   (3) neighbour-aware GCN (reliability reweighting, recalculated per timestep)
